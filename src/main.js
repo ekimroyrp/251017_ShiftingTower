@@ -12,6 +12,8 @@ const renderer = new THREE.WebGLRenderer({
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -37,12 +39,56 @@ scene.add(hemiLight);
 
 const keyLight = new THREE.DirectionalLight(0xffffff, 1.05);
 keyLight.position.set(140, 200, 120);
-keyLight.castShadow = false;
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.set(2048, 2048);
+keyLight.shadow.camera.near = 10;
+keyLight.shadow.camera.far = 600;
+keyLight.shadow.camera.left = -200;
+keyLight.shadow.camera.right = 200;
+keyLight.shadow.camera.top = 200;
+keyLight.shadow.camera.bottom = -200;
 scene.add(keyLight);
 
 const fillLight = new THREE.DirectionalLight(0xffbfd7, 0.35);
 fillLight.position.set(-120, 100, -80);
 scene.add(fillLight);
+
+const backLight = new THREE.DirectionalLight(0xd8e3ff, 0.4);
+backLight.position.set(-80, 160, -60);
+scene.add(backLight);
+
+const lightingPresets = {
+  "Studio Soft": {
+    hemi: { color: 0xffffff, groundColor: 0xd1d5db, intensity: 0.75 },
+    key: { color: 0xffffff, intensity: 1.1, position: [140, 200, 120] },
+    fill: { color: 0xffbfd7, intensity: 0.35, position: [-120, 100, -80] },
+    back: { color: 0xd8e3ff, intensity: 0.4, position: [-80, 160, -60] }
+  },
+  "Sunset Warm": {
+    hemi: { color: 0xfff3e0, groundColor: 0xffd2b6, intensity: 0.6 },
+    key: { color: 0xffbb73, intensity: 1.25, position: [180, 150, 40] },
+    fill: { color: 0xff88aa, intensity: 0.45, position: [-160, 90, -100] },
+    back: { color: 0xffe5c3, intensity: 0.35, position: [-40, 200, 160] }
+  },
+  "Cool Overcast": {
+    hemi: { color: 0xe2f0ff, groundColor: 0xbdd3ff, intensity: 0.9 },
+    key: { color: 0xcadfff, intensity: 0.85, position: [90, 220, 140] },
+    fill: { color: 0x91a8ff, intensity: 0.65, position: [-180, 120, 30] },
+    back: { color: 0xffffff, intensity: 0.25, position: [60, 200, -140] }
+  },
+  "Night Neon": {
+    hemi: { color: 0x2d2d3a, groundColor: 0x1c142e, intensity: 0.4 },
+    key: { color: 0x7a5fff, intensity: 1.6, position: [80, 120, 160] },
+    fill: { color: 0xff3fa4, intensity: 0.9, position: [-140, 80, -40] },
+    back: { color: 0x69f0ff, intensity: 0.6, position: [0, 200, -160] }
+  },
+  "Gallery Neutral": {
+    hemi: { color: 0xfefefe, groundColor: 0xe6ecf2, intensity: 0.8 },
+    key: { color: 0xffffff, intensity: 1.4, position: [160, 240, 60] },
+    fill: { color: 0xf0f6ff, intensity: 0.55, position: [-200, 160, -40] },
+    back: { color: 0xffffff, intensity: 0.35, position: [20, 260, -120] }
+  }
+};
 
 const grid = new THREE.GridHelper(1000, 200, 0xdedee7, 0xdedee7);
 grid.material.opacity = 0.35;
@@ -50,6 +96,18 @@ grid.material.transparent = true;
 grid.material.depthWrite = false;
 grid.renderOrder = -1;
 scene.add(grid);
+
+const shadowMaterial = new THREE.ShadowMaterial({ opacity: 0.25 });
+shadowMaterial.depthWrite = false;
+const shadowPlane = new THREE.Mesh(
+  new THREE.PlaneGeometry(2000, 2000),
+  shadowMaterial
+);
+shadowPlane.rotation.x = -Math.PI / 2;
+shadowPlane.position.y = 0;
+shadowPlane.receiveShadow = true;
+shadowPlane.renderOrder = -2;
+scene.add(shadowPlane);
 
 const params = {
   seed: 1337,
@@ -66,14 +124,16 @@ const params = {
   subSlabScale: 0.45,
   shiftAmplitude: 18,
   verticalJitter: 0.18,
-  rotationJitter: 0.35,
+  rotationJitter: 0,
   taper: 0.38,
   gradientBottom: "#ff6d9a",
   gradientTop: "#8f7bff",
   backgroundColor: "#f4f4f8",
-  autoRotate: true,
+  autoRotate: false,
   rotationSpeed: 0.12,
-  fogIntensity: 0.02
+  fogIntensity: 0.003,
+  shadowsEnabled: true,
+  sceneLighting: "Studio Soft"
 };
 
 const updateBackground = () => {
@@ -95,6 +155,37 @@ const updateFog = () => {
   renderer.render(scene, camera);
 };
 
+const updateShadows = () => {
+  renderer.shadowMap.enabled = params.shadowsEnabled;
+  keyLight.castShadow = params.shadowsEnabled;
+  shadowPlane.visible = params.shadowsEnabled;
+  towerMesh.castShadow = params.shadowsEnabled;
+  renderer.render(scene, camera);
+};
+
+const applySceneLighting = (presetName) => {
+  const preset =
+    lightingPresets[presetName] || lightingPresets["Studio Soft"];
+  const { hemi, key, fill, back } = preset;
+  hemiLight.color.setHex(hemi.color);
+  hemiLight.groundColor.setHex(hemi.groundColor);
+  hemiLight.intensity = hemi.intensity;
+
+  keyLight.color.setHex(key.color);
+  keyLight.intensity = key.intensity;
+  keyLight.position.set(...key.position);
+
+  fillLight.color.setHex(fill.color);
+  fillLight.intensity = fill.intensity;
+  fillLight.position.set(...fill.position);
+
+  backLight.color.setHex(back.color);
+  backLight.intensity = back.intensity;
+  backLight.position.set(...back.position);
+
+  renderer.render(scene, camera);
+};
+
 const towerMaterial = new THREE.MeshStandardMaterial({
   vertexColors: true,
   roughness: 0.55,
@@ -106,7 +197,7 @@ const towerGroup = new THREE.Group();
 scene.add(towerGroup);
 
 const towerMesh = new THREE.Mesh(new THREE.BufferGeometry(), towerMaterial);
-towerMesh.castShadow = false;
+towerMesh.castShadow = true;
 towerMesh.receiveShadow = false;
 towerGroup.add(towerMesh);
 
@@ -130,6 +221,8 @@ const regenerateTower = () => {
 
 updateBackground();
 updateFog();
+updateShadows();
+applySceneLighting(params.sceneLighting);
 
 const gui = new GUI();
 
@@ -271,6 +364,18 @@ presentationFolder
   .name("Fog")
   .onChange(() => {
     updateFog();
+  });
+presentationFolder
+  .add(params, "shadowsEnabled")
+  .name("Shadows")
+  .onChange(() => {
+    updateShadows();
+  });
+presentationFolder
+  .add(params, "sceneLighting", Object.keys(lightingPresets))
+  .name("Scene Lighting")
+  .onChange((value) => {
+    applySceneLighting(value);
   });
 
 gui.add(

@@ -15,7 +15,8 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0xf4f4f8, 120, 320);
+const fog = new THREE.FogExp2(0xf4f4f8, 0.02);
+scene.fog = fog;
 
 const camera = new THREE.PerspectiveCamera(
   45,
@@ -71,7 +72,8 @@ const params = {
   gradientTop: "#8f7bff",
   backgroundColor: "#f4f4f8",
   autoRotate: true,
-  rotationSpeed: 0.12
+  rotationSpeed: 0.12,
+  fogIntensity: 0.02
 };
 
 const updateBackground = () => {
@@ -80,6 +82,17 @@ const updateBackground = () => {
   if (scene.fog) {
     scene.fog.color.copy(bgColor);
   }
+};
+
+const updateFog = () => {
+  if (params.fogIntensity > 0) {
+    fog.density = params.fogIntensity;
+    fog.color.set(params.backgroundColor);
+    scene.fog = fog;
+  } else {
+    scene.fog = null;
+  }
+  renderer.render(scene, camera);
 };
 
 const towerMaterial = new THREE.MeshStandardMaterial({
@@ -116,6 +129,7 @@ const regenerateTower = () => {
 };
 
 updateBackground();
+updateFog();
 
 const gui = new GUI();
 
@@ -252,6 +266,12 @@ presentationFolder
 presentationFolder
   .add(params, "rotationSpeed", 0, 0.6, 0.01)
   .name("Rotation Speed");
+presentationFolder
+  .add(params, "fogIntensity", 0, 0.08, 0.001)
+  .name("Fog")
+  .onChange(() => {
+    updateFog();
+  });
 
 gui.add(
   {

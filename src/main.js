@@ -15,7 +15,6 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color("#f4f4f8");
 scene.fog = new THREE.Fog(0xf4f4f8, 120, 320);
 
 const camera = new THREE.PerspectiveCamera(
@@ -63,8 +62,17 @@ const params = {
   taper: 0.38,
   gradientBottom: "#ff6d9a",
   gradientTop: "#8f7bff",
+  backgroundColor: "#f4f4f8",
   autoRotate: true,
   rotationSpeed: 0.12
+};
+
+const updateBackground = () => {
+  const bgColor = new THREE.Color(params.backgroundColor);
+  scene.background = bgColor;
+  if (scene.fog) {
+    scene.fog.color.copy(bgColor);
+  }
 };
 
 const towerMaterial = new THREE.MeshStandardMaterial({
@@ -95,6 +103,8 @@ const regenerateTower = () => {
   }
   needsRegeneration = false;
 };
+
+updateBackground();
 
 const gui = new GUI();
 
@@ -216,6 +226,12 @@ colorFolder
   .name("Top")
   .onChange(() => {
     needsRegeneration = true;
+  });
+colorFolder
+  .addColor(params, "backgroundColor")
+  .name("Background")
+  .onChange(() => {
+    updateBackground();
   });
 
 const presentationFolder = gui.addFolder("Presentation");

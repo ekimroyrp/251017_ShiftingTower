@@ -43,6 +43,13 @@ const fillLight = new THREE.DirectionalLight(0xffbfd7, 0.35);
 fillLight.position.set(-120, 100, -80);
 scene.add(fillLight);
 
+const grid = new THREE.GridHelper(1000, 200, 0xdedee7, 0xdedee7);
+grid.material.opacity = 0.35;
+grid.material.transparent = true;
+grid.material.depthWrite = false;
+grid.renderOrder = -1;
+scene.add(grid);
+
 const params = {
   seed: 1337,
   slabCount: 60,
@@ -98,8 +105,12 @@ const regenerateTower = () => {
   towerMesh.geometry = geometry;
   const bbox = geometry.boundingBox;
   if (bbox) {
-    const centerY = (bbox.max.y + bbox.min.y) * 0.5;
+    const baseOffset = -bbox.min.y + 0.01;
+    towerGroup.position.y = baseOffset;
+    const centerY = (bbox.max.y + bbox.min.y) * 0.5 + towerGroup.position.y;
     controls.target.set(0, centerY, 0);
+  } else {
+    towerGroup.position.y = 0;
   }
   needsRegeneration = false;
 };

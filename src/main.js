@@ -128,7 +128,7 @@ const params = {
   taper: 0.38,
   gradientBottom: "#ff6d9a",
   gradientTop: "#8f7bff",
-  backgroundColor: "#f4f4f8",
+  backgroundColor: "#0f1016",
   autoRotate: false,
   rotationSpeed: 0.12,
   fogIntensity: 0.003,

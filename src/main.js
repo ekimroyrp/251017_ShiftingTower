@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import * as CANNON from "cannon-es";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GUI } from "lil-gui";
 import { buildTowerGeometry } from "./towerGenerator.js";
@@ -109,6 +110,10 @@ shadowPlane.receiveShadow = true;
 shadowPlane.renderOrder = -2;
 scene.add(shadowPlane);
 
+const physicsGroup = new THREE.Group();
+physicsGroup.visible = false;
+scene.add(physicsGroup);
+
 const params = {
   seed: 1337,
   slabCount: 60,
@@ -122,6 +127,7 @@ const params = {
   subSlabMin: 1,
   subSlabMax: 5,
   subSlabScale: 0.45,
+  slabCopies: 0,
   shiftAmplitude: 18,
   verticalJitter: 0.18,
   rotationJitter: 0,
@@ -133,6 +139,7 @@ const params = {
   rotationSpeed: 0.12,
   fogIntensity: 0.003,
   shadowsEnabled: true,
+  gravityEnabled: false,
   sceneLighting: "Studio Soft"
 };
 
@@ -143,6 +150,15 @@ const updateBackground = () => {
     scene.fog.color.copy(bgColor);
   }
 };
+
+let currentSlabData = [];
+let gravityModeEnabled = false;
+let physicsWorld = null;
+let physicsBodies = [];
+let physicsMeshes = [];
+let physicsAccumulator = 0;
+const FIXED_TIME_STEP = 1 / 60;
+const MAX_PHYSICS_STEPS = 5;
 
 const updateFog = () => {
   if (params.fogIntensity > 0) {
@@ -160,6 +176,9 @@ const updateShadows = () => {
   keyLight.castShadow = params.shadowsEnabled;
   shadowPlane.visible = params.shadowsEnabled;
   towerMesh.castShadow = params.shadowsEnabled;
+  physicsMeshes.forEach((mesh) => {
+    mesh.castShadow = params.shadowsEnabled;
+  });
   renderer.render(scene, camera);
 };
 
@@ -186,6 +205,119 @@ const applySceneLighting = (presetName) => {
   renderer.render(scene, camera);
 };
 
+const disposePhysicsMeshes = () => {
+  physicsMeshes.forEach((mesh) => {
+    physicsGroup.remove(mesh);
+    mesh.geometry.dispose();
+    if (Array.isArray(mesh.material)) {
+      mesh.material.forEach((mat) => mat.dispose && mat.dispose());
+    } else if (mesh.material) {
+      mesh.material.dispose();
+    }
+  });
+  physicsMeshes = [];
+};
+
+const rebuildPhysicsFromSlabs = () => {
+  if (!gravityModeEnabled) {
+    return;
+  }
+  physicsAccumulator = 0;
+  physicsBodies = [];
+  disposePhysicsMeshes();
+  physicsGroup.rotation.set(0, 0, 0);
+
+  physicsWorld = new CANNON.World({
+    gravity: new CANNON.Vec3(0, -9.82, 0)
+  });
+  physicsWorld.broadphase = new CANNON.SAPBroadphase(physicsWorld);
+  physicsWorld.allowSleep = true;
+
+  const groundBody = new CANNON.Body({ mass: 0 });
+  groundBody.addShape(new CANNON.Plane());
+  groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+  physicsWorld.addBody(groundBody);
+
+  const lift = params.totalHeight * 0.3 + 10;
+  const groupOffset = towerGroup.position.clone();
+
+  currentSlabData.forEach((slab) => {
+    const body = new CANNON.Body({
+      mass: Math.max(
+        0.5,
+        (slab.width * slab.depth * slab.height) * 0.002
+      ),
+      shape: new CANNON.Box(
+        new CANNON.Vec3(slab.width / 2, slab.height / 2, slab.depth / 2)
+      ),
+      position: new CANNON.Vec3(
+        slab.position.x + groupOffset.x,
+        slab.position.y + groupOffset.y + lift,
+        slab.position.z + groupOffset.z
+      ),
+      quaternion: new CANNON.Quaternion().setFromEuler(
+        0,
+        slab.rotationY,
+        0,
+        "XYZ"
+      )
+    });
+    body.angularDamping = 0.4;
+    body.linearDamping = 0.15;
+    physicsWorld.addBody(body);
+    physicsBodies.push(body);
+
+    const geometry = new THREE.BoxGeometry(
+      slab.width,
+      slab.height,
+      slab.depth
+    );
+    const material = new THREE.MeshStandardMaterial({
+      color: slab.color,
+      roughness: towerMaterial.roughness,
+      metalness: towerMaterial.metalness,
+      flatShading: towerMaterial.flatShading
+    });
+    material.vertexColors = false;
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = params.shadowsEnabled;
+    mesh.receiveShadow = false;
+    mesh.position.set(body.position.x, body.position.y, body.position.z);
+    mesh.quaternion.set(
+      body.quaternion.x,
+      body.quaternion.y,
+      body.quaternion.z,
+      body.quaternion.w
+    );
+    physicsGroup.add(mesh);
+    physicsMeshes.push(mesh);
+  });
+
+  physicsGroup.visible = true;
+  towerMesh.visible = false;
+};
+
+const disableGravityMode = () => {
+  gravityModeEnabled = false;
+  params.gravityEnabled = false;
+  disposePhysicsMeshes();
+  physicsBodies = [];
+  physicsWorld = null;
+  physicsAccumulator = 0;
+  physicsGroup.visible = false;
+  physicsGroup.rotation.set(0, 0, 0);
+  towerMesh.visible = true;
+};
+
+const setGravityEnabled = (enabled) => {
+  if (enabled) {
+    gravityModeEnabled = true;
+    params.gravityEnabled = true;
+    rebuildPhysicsFromSlabs();
+  } else {
+    disableGravityMode();
+  }
+};
 const towerMaterial = new THREE.MeshStandardMaterial({
   vertexColors: true,
   roughness: 0.55,
@@ -204,9 +336,10 @@ towerGroup.add(towerMesh);
 let needsRegeneration = true;
 
 const regenerateTower = () => {
-  const geometry = buildTowerGeometry(params);
+  const { geometry, slabs } = buildTowerGeometry(params);
   towerMesh.geometry.dispose();
   towerMesh.geometry = geometry;
+  currentSlabData = slabs;
   const bbox = geometry.boundingBox;
   if (bbox) {
     const baseOffset = -bbox.min.y + 0.01;
@@ -215,6 +348,9 @@ const regenerateTower = () => {
     controls.target.set(0, centerY, 0);
   } else {
     towerGroup.position.y = 0;
+  }
+  if (gravityModeEnabled) {
+    rebuildPhysicsFromSlabs();
   }
   needsRegeneration = false;
 };
@@ -331,6 +467,13 @@ layeringFolder
   .onFinishChange(() => {
     needsRegeneration = true;
   });
+layeringFolder
+  .add(params, "slabCopies", 0, 5, 1)
+  .name("Copy")
+  .onFinishChange(() => {
+    params.slabCopies = Math.max(0, Math.floor(params.slabCopies));
+    needsRegeneration = true;
+  });
 
 const colorFolder = gui.addFolder("Color");
 colorFolder
@@ -372,6 +515,12 @@ presentationFolder
     updateShadows();
   });
 presentationFolder
+  .add(params, "gravityEnabled")
+  .name("Gravity")
+  .onChange((value) => {
+    setGravityEnabled(value);
+  });
+presentationFolder
   .add(params, "sceneLighting", Object.keys(lightingPresets))
   .name("Scene Lighting")
   .onChange((value) => {
@@ -407,7 +556,31 @@ const animate = (timestamp = 0) => {
   }
 
   if (params.autoRotate) {
-    towerGroup.rotation.y += delta * params.rotationSpeed;
+    const rotationDelta = delta * params.rotationSpeed;
+    if (gravityModeEnabled) {
+      physicsGroup.rotation.y += rotationDelta;
+    } else {
+      towerGroup.rotation.y += rotationDelta;
+    }
+  }
+
+  if (gravityModeEnabled && physicsWorld) {
+    physicsWorld.step(FIXED_TIME_STEP, delta, MAX_PHYSICS_STEPS);
+    physicsBodies.forEach((body, index) => {
+      const mesh = physicsMeshes[index];
+      if (!mesh) {
+        return;
+      }
+      mesh.position.set(body.position.x, body.position.y, body.position.z);
+      mesh.quaternion.set(
+        body.quaternion.x,
+        body.quaternion.y,
+        body.quaternion.z,
+        body.quaternion.w
+      );
+    });
+  } else if (!gravityModeEnabled) {
+    physicsGroup.rotation.y = 0;
   }
 
   controls.update();

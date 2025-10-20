@@ -24,6 +24,7 @@ export const buildTowerGeometry = (params) => {
     subSlabMin,
     subSlabMax,
     subSlabScale,
+    slabCopies,
     shiftAmplitude,
     verticalJitter,
     rotationJitter,
@@ -37,6 +38,7 @@ export const buildTowerGeometry = (params) => {
   const topColor = new THREE.Color(gradientTop);
 
   const geometries = [];
+  const slabs = [];
   const heightStep = slabCount > 1 ? totalHeight / (slabCount - 1) : totalHeight;
   const baseThickness = clampPositive(slabThickness, 0.2);
   const taperClamp = THREE.MathUtils.clamp(taper, 0, 0.95);
@@ -65,18 +67,18 @@ export const buildTowerGeometry = (params) => {
 
       const width = clampPositive(baseWidth * widthScale, 0.75);
       const depth = clampPositive(baseDepth * depthScale, 0.75);
-      const thickness =
+      const thicknessVariation =
         baseThickness * (1 + (rng() * 2 - 1) * thicknessVariance);
+      const actualThickness = clampPositive(
+        thicknessVariation,
+        baseThickness * 0.25
+      );
 
       const offsetX = (rng() * 2 - 1) * shiftAmplitude * (1 - levelT * 0.25);
       const offsetZ = (rng() * 2 - 1) * shiftAmplitude * (1 - levelT * 0.25);
       const rotationY = (rng() * 2 - 1) * rotationJitter;
 
-      const geometry = new THREE.BoxGeometry(
-        width,
-        clampPositive(thickness, baseThickness * 0.25),
-        depth
-      );
+      const geometry = new THREE.BoxGeometry(width, actualThickness, depth);
 
       const { count } = geometry.attributes.position;
       const colorArray = new Float32Array(count * 3);
@@ -95,7 +97,37 @@ export const buildTowerGeometry = (params) => {
       tempMatrix.compose(tempPosition, tempQuaternion, unitScale);
       geometry.applyMatrix4(tempMatrix);
 
+      const colorHex = gradientColor.getHex();
+
       geometries.push(geometry);
+      slabs.push({
+        width,
+        depth,
+        height: actualThickness,
+        position: { x: offsetX, y: yOffset, z: offsetZ },
+        rotationY,
+        color: colorHex
+      });
+
+      if (slabCopies > 0) {
+        for (let copyIndex = 1; copyIndex <= slabCopies; copyIndex += 1) {
+          const copyGeometry = geometry.clone();
+          copyGeometry.translate(0, actualThickness * copyIndex, 0);
+          geometries.push(copyGeometry);
+          slabs.push({
+            width,
+            depth,
+            height: actualThickness,
+            position: {
+              x: offsetX,
+              y: yOffset + actualThickness * copyIndex,
+              z: offsetZ
+            },
+            rotationY,
+            color: colorHex
+          });
+        }
+      }
     }
   }
 
@@ -109,5 +141,5 @@ export const buildTowerGeometry = (params) => {
   merged.computeBoundingBox();
   merged.computeBoundingSphere();
 
-  return merged;
+  return { geometry: merged, slabs };
 };

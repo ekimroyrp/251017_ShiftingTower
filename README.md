@@ -22,3 +22,8 @@
 - **Color:** Pick gradient bottom/top colors and background tone for the scene.
 - **Presentation:** Toggle auto-rotation, alter rotation speed, enable shadows or fog, and switch lighting presets.
 - **Physics:** Enable gravity mode to drop the tower slabs using the built-in physics simulation.
+
+## Deployment
+- **Local production preview:** Run `npm install`, then `npm run build` followed by `npm run preview` to serve the compiled bundle.
+- **Publish to GitHub Pages:** From `main`, run `npm run build -- --base=./`, copy the `dist/` output into the `gh-pages` branch (or use the existing worktree workflow), commit, and `git push origin gh-pages`. Switch back to `main` afterwards.
+- **Live demo:** https://ekimroyrp.github.io/251017_ShiftingTower/
